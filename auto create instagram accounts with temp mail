@@ -1,0 +1,124 @@
+import time
+import requests
+import random
+import re
+from selenium import webdriver
+from selenium.webdriver.common.by import By
+from selenium.webdriver.support.ui import Select
+from selenium.webdriver.chrome.service import Service
+from selenium.webdriver.chrome.options import Options
+from selenium.common.exceptions import NoSuchElementException, TimeoutException
+from webdriver_manager.chrome import ChromeDriverManager
+
+# Function to generate a temporary email from hi2.in
+def generate_temp_email():
+    response = requests.get("https://api.hi2.in/v1/email")
+    if response.status_code == 200:
+        data = response.json()
+        return data["email"], data["id"]
+    return None, None
+
+# Function to fetch Instagram verification link
+def get_verification_link(email_id, max_attempts=5):
+    for attempt in range(max_attempts):
+        print(f"Checking email inbox (Attempt {attempt+1}/{max_attempts})...")
+        time.sleep(15)  # Wait before checking inbox
+        response = requests.get(f"https://api.hi2.in/v1/inbox/{email_id}")
+        if response.status_code == 200:
+            emails = response.json().get("emails", [])
+            for mail in emails:
+                if "Confirm your email" in mail["subject"]:
+                    return extract_verification_link(mail["body"])
+    return None
+
+# Function to extract verification link from email body
+def extract_verification_link(email_body):
+    match = re.search(r"https://www.instagram.com/accounts/confirm_email/[^\s]+", email_body)
+    return match.group(0) if match else None
+
+# Function to request Instagram to resend the verification email
+def resend_verification_email(browser):
+    try:
+        print("Requesting Instagram to resend verification email...")
+        browser.get("https://www.instagram.com/accounts/emailsignup/")
+        time.sleep(3)
+        resend_button = browser.find_element(By.XPATH, '//button[contains(text(),"Resend")]')
+        resend_button.click()
+        print("Verification email resent successfully.")
+    except NoSuchElementException:
+        print("Resend button not found.")
+
+# Function to create an Instagram account
+def create_instagram_account():
+    email, email_id = generate_temp_email()
+    if not email:
+        print("Failed to generate temporary email.")
+        return
+
+    first_name = "User"
+    last_name = str(random.randint(1000, 9999))
+    full_name = f"{first_name} {last_name}"
+    username = f"user{random.randint(1000, 9999)}"
+    password = "StrongPass123!"
+
+    print(f"\nGenerated Email: {email}")
+
+    # Setup Selenium
+    chrome_options = Options()
+    service = Service(ChromeDriverManager().install())
+    browser = webdriver.Chrome(service=service, options=chrome_options)
+    browser.set_page_load_timeout(30)
+
+    try:
+        browser.get("https://www.instagram.com/accounts/emailsignup/")
+        time.sleep(3)
+
+        # Fill in the signup form
+        browser.find_element(By.NAME, "emailOrPhone").send_keys(email)
+        time.sleep(2)
+        browser.find_element(By.NAME, "fullName").send_keys(full_name)
+        time.sleep(2)
+        browser.find_element(By.NAME, "username").send_keys(username)
+        time.sleep(2)
+        browser.find_element(By.NAME, "password").send_keys(password)
+        time.sleep(2)
+
+        # Click Sign-Up
+        browser.find_element(By.XPATH, '//button[contains(text(),"Sign up")]').click()
+        time.sleep(5)
+
+        # Select birthdate
+        Select(browser.find_element(By.XPATH, '//*[@title="Year:"]')).select_by_index(random.randint(20, 46))
+        time.sleep(1)
+        Select(browser.find_element(By.XPATH, '//*[@title="Month:"]')).select_by_index(random.randint(1, 12))
+        time.sleep(1)
+        Select(browser.find_element(By.XPATH, '//*[@title="Day:"]')).select_by_index(random.randint(1, 27))
+        time.sleep(3)
+
+        # Click Next
+        browser.find_element(By.XPATH, '//button[contains(text(),"Next")]').click()
+        time.sleep(10)
+
+        # Fetch Verification Link
+        verification_link = get_verification_link(email_id)
+
+        if not verification_link:
+            print("No verification email received. Requesting a resend...")
+            resend_verification_email(browser)
+            time.sleep(10)  # Wait before checking again
+            verification_link = get_verification_link(email_id)
+
+        if verification_link:
+            print(f"Opening verification link: {verification_link}")
+            browser.get(verification_link)
+            time.sleep(5)
+        else:
+            print("Verification email not received even after resending.")
+
+    except (TimeoutException, NoSuchElementException) as e:
+        print(f"Error: {e}")
+    finally:
+        browser.quit()
+
+# Run the function
+create_instagram_account()
